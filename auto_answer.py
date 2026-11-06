@@ -3,6 +3,7 @@ import io
 import json
 import re
 import time
+import logging
 import os
 
 try:
@@ -12,13 +13,16 @@ except ImportError:
 
 import pytesseract
 from PIL import Image, ImageOps
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, errors, utils
+from telethon.tl.functions.messages import GetDiscussionMessageRequest
 from telethon.sessions import StringSession
 
+logging.basicConfig(level=logging.WARNING)   # shows Telethon warnings (server errors, flood waits) in the log
+
 # ---------- SETTINGS ----------
-API_ID = int(os.environ.get("API_ID", 39964341))   # from my.telegram.org
-API_HASH = os.environ.get("API_HASH", "ba8fe69f02ceac8ea2192f32e96c125e")
-CHANNEL = os.environ.get("CHANNEL", "ft89898")   # channel to watch (without @)
+API_ID = int(os.environ.get("API_ID", 12345))   # from my.telegram.org
+API_HASH = os.environ.get("API_HASH", "your_api_hash")
+CHANNEL = os.environ.get("CHANNEL", "channel_username")   # channel to watch (without @)
 
 DATA_FILE = "data.json"            # symbols with high/low
 ALIASES_FILE = "aliases.json"      # {"gold": "XAUUSD", "us tech 100": "NAS100", ...}
@@ -27,6 +31,7 @@ ALIASES_FILE = "aliases.json"      # {"gold": "XAUUSD", "us tech 100": "NAS100",
 # Measured on the 720x1280 question image: text is x 35-678, y 324-401 -> box (20, 315, 700, 410).
 # Fractions make it work for any image size of the same layout.
 CROP_FRAC = (20 / 720, 315 / 1280, 700 / 720, 410 / 1280)
+LOOKUP_TIMEOUT = 0.5               # seconds before a slow discussion lookup is retried (Telethon itself waits 2s)
 UPSCALE = 1                        # 1 = fastest; 2 gave no better result on this layout
 
 TESSERACT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -111,6 +116,29 @@ SESSION = os.environ.get("SESSION")  # string session (cloud); empty = local .se
 client = TelegramClient(StringSession(SESSION) if SESSION else "auto_answer_session", API_ID, API_HASH)
 
 
+CHANNEL_INPUT = None   # resolved once at startup
+
+
+async def get_discussion_target(post_id, give_up=10.0):
+    """Find the comment thread of a post. Telethon sleeps 2s after every Telegram server error,
+    which is what made 'send' take 2.4s / 4.5s. Here a slow try is cancelled and repeated at once."""
+    start = time.perf_counter()
+    while time.perf_counter() - start < give_up:
+        try:
+            r = await asyncio.wait_for(
+                client(GetDiscussionMessageRequest(peer=CHANNEL_INPUT, msg_id=post_id)),
+                timeout=LOOKUP_TIMEOUT,
+            )
+            m = r.messages[0]
+            chat = next(c for c in r.chats if c.id == m.peer_id.channel_id)
+            return utils.get_input_peer(chat), m.id
+        except asyncio.TimeoutError:
+            pass                         # Telethon was sleeping on a server error -> retry now
+        except errors.RPCError:
+            await asyncio.sleep(0.05)    # post's comment thread not ready yet
+    return None
+
+
 @client.on(events.NewMessage(chats=CHANNEL))
 async def handler(event):
     msg = event.message
@@ -119,6 +147,9 @@ async def handler(event):
     answered.add(msg.id)  # mark first so we never comment twice
 
     t0 = time.perf_counter()
+    # start looking up the comment thread NOW, while we download + OCR the image
+    target_task = asyncio.create_task(get_discussion_target(msg.id))
+
     image_bytes = await msg.download_media(bytes)   # in memory, no disk
     t1 = time.perf_counter()
 
@@ -127,17 +158,27 @@ async def handler(event):
 
     symbol = find_symbol(text)
     if not symbol:
+        target_task.cancel()
         alert(f"Could not answer post {msg.id}. OCR read: {text.strip()!r}")
         return
 
-    await client.send_message(CHANNEL, build_answer(symbol, text), comment_to=msg)
+    answer = build_answer(symbol, text)
+    target = await target_task
     t3 = time.perf_counter()
+    if target:
+        peer, reply_id = target
+        await client.send_message(peer, answer, reply_to=reply_id)
+    else:   # fallback: the slow built-in way
+        await client.send_message(CHANNEL, answer, comment_to=msg)
+    t4 = time.perf_counter()
 
-    print(f"{symbol} | download {t1-t0:.2f}s | OCR {t2-t1:.2f}s | send {t3-t2:.2f}s")
+    print(f"{symbol} | download {t1-t0:.2f}s | OCR {t2-t1:.2f}s | wait-thread {t3-t2:.2f}s | send {t4-t3:.2f}s | total {t4-t0:.2f}s")
 
 
 async def main():
     await client.start()
+    global CHANNEL_INPUT
+    CHANNEL_INPUT = await client.get_input_entity(CHANNEL)   # resolve once, not per post
     print("Watching channel... (Ctrl+C to stop)")
     await client.run_until_disconnected()
 
