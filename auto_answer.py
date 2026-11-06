@@ -15,6 +15,7 @@ except ImportError:
 import pytesseract
 from PIL import Image, ImageOps
 from telethon import TelegramClient, events, utils
+from telethon.tl.types import PeerUser
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetDiscussionMessageRequest
 from telethon.sessions import StringSession
@@ -166,6 +167,8 @@ async def group_handler(event):
     """The moment Telegram copies the post into the discussion group, we get it as a
     normal update. That copy IS the comment thread root -> reply to it right away."""
     m = event.message
+    if isinstance(m.from_id, PeerUser):   # a normal user's message (chat or manual forward) -> ignore
+        return
     fwd = m.fwd_from
     if fwd and fwd.channel_post and getattr(fwd.from_id, "channel_id", None) == CHANNEL_RAW_ID:
         resolve_thread(fwd.channel_post, GROUP_INPUT, m.id, "push")
@@ -173,7 +176,11 @@ async def group_handler(event):
 
 async def handler(event):
     msg = event.message
-    if not msg.photo or msg.id in answered:
+    if not msg.photo:
+        if msg.text and not msg.document:
+            print("txt ignored")
+        return
+    if msg.id in answered:
         return
     answered.add(msg.id)
 
