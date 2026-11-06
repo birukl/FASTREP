@@ -16,9 +16,9 @@ from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 # ---------- SETTINGS ----------
-API_ID = int(os.environ.get("API_ID", 12345))   # from my.telegram.org
-API_HASH = os.environ.get("API_HASH", "your_api_hash")
-CHANNEL = os.environ.get("CHANNEL", "channel_username")   # channel to watch (without @)
+API_ID = int(os.environ.get("API_ID", 39964341))   # from my.telegram.org
+API_HASH = os.environ.get("API_HASH", "ba8fe69f02ceac8ea2192f32e96c125e")
+CHANNEL = os.environ.get("CHANNEL", "ft89898")   # channel to watch (without @)
 
 DATA_FILE = "data.json"            # symbols with high/low
 ALIASES_FILE = "aliases.json"      # {"gold": "XAUUSD", "us tech 100": "NAS100", ...}
