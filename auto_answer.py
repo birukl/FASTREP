@@ -184,7 +184,10 @@ async def main():
     await client.start()
     global CHANNEL_INPUT
     CHANNEL_INPUT = await client.get_input_entity(CHANNEL)   # resolve once, not per post
-    print("Watching channel... (Ctrl+C to stop)")
+    entity = await client.get_entity(CHANNEL_INPUT)
+    name = getattr(entity, "title", None) or CHANNEL
+    username = f" (@{entity.username})" if getattr(entity, "username", None) else ""
+    print(f"Watching channel: {name}{username} ... (Ctrl+C to stop)")
     await client.run_until_disconnected()
 
 
