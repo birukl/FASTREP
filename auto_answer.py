@@ -104,9 +104,9 @@ def build_answer(symbol, text):
     wants_high = "HIGH" in t
     wants_low = "LOW" in t
     if wants_high and not wants_low:
-        return f"{symbol} high: {item['high']}"
+        return f"{item['high']}"
     if wants_low and not wants_high:
-        return f"{symbol} low: {item['low']}"
+        return f"{item['low']}"
     return f"{symbol}\nHigh: {item['high']}\nLow: {item['low']}"
 
 
