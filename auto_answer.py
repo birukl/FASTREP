@@ -145,7 +145,7 @@ async def handler(event):
     msg = event.message
     if not msg.photo:
         if msg.text and not msg.document:
-            print("txt ignored")
+            print("text post ignored")
         return
     if msg.id in answered:
         return
@@ -183,6 +183,10 @@ async def handler(event):
 async def main():
     await client.start()
     global CHANNEL_INPUT
+    me = await client.get_me()
+    my_name = " ".join(filter(None, [me.first_name, me.last_name])) or "no name"
+    my_user = f" (@{me.username})" if me.username else ""
+    print(f"Logged in as: {my_name}{my_user}")
     CHANNEL_INPUT = await client.get_input_entity(CHANNEL)   # resolve once, not per post
     entity = await client.get_entity(CHANNEL_INPUT)
     name = getattr(entity, "title", None) or CHANNEL
